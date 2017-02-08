@@ -24,7 +24,7 @@ let s:internal_repls = add(map(filter(['lua', 'mzscheme', 'perl', 'python', 'pyt
 
 function! replica#repl(name) abort " {{{
   if !executable(a:name)
-    echoerr "[replica] Unable to execute" a:name
+    echoerr '[replica] Unable to execute' a:name
     return
   endif
   execute 'botright' g:replica#max_nlines 'new [replica]'
@@ -59,7 +59,7 @@ function! replica#repl_internal(...) abort " {{{
   let name = a:0 > 0 ? a:1 : 'vim'
   let items = filter(copy(s:internal_repls), '!stridx(tolower(v:val.name), name)')
   if empty(items)
-    echoerr '[replica]' a:name 'is not available'
+    echoerr '[replica]' name 'is not available'
     return
   endif
   execute 'botright' g:replica#max_nlines 'new [replica]'

@@ -20,6 +20,7 @@ let s:internal_repls = add(map(filter(['lua', 'mzscheme', 'perl', 'python', 'pyt
       \ 'name': 'vim',
       \ 'prefix': ''
       \})
+let s:ANSI = vital#replica#import('Vim.Buffer.ANSI')
 " }}}
 
 function! replica#repl(name) abort " {{{
@@ -30,6 +31,7 @@ function! replica#repl(name) abort " {{{
   execute 'botright' g:replica#max_nlines 'new [replica]'
   setlocal nobuflisted bufhidden=unload buftype=nofile
   call setline(1, '*[vim-replica]*')
+  call s:ANSI.define_syntax()
   let job_id = job_start(a:name, {
         \ 'callback': function('s:on_out'),
         \ 'exit_cb': function('s:on_exit'),

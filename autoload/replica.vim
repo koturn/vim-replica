@@ -69,17 +69,13 @@ function! replica#repl_internal(...) abort " {{{
   let [prefix, input] = [items[0].prefix, input(g:replica#prompt)]
   while input !=# 'exit'
     try
-      redir => line
-      silent execute prefix input
-      redir END
+      let line = execute(prefix . input)
       call setline(line('$'), getline('$') . input)
       call s:on_out(v:null, line)
     catch /^Vim:Interrupt$/
-      redir END
       call s:on_exit()
       return
     catch
-      redir END
       call setline(line('$'), g:replica#prompt . input)
       call s:on_out(v:null, v:exception)
     endtry

@@ -74,7 +74,7 @@ function! replica#repl_internal(...) abort " {{{
   let [prefix, input] = [items[0].prefix, input(g:replica#prompt)]
   while input !=# 'exit'
     try
-      let line = execute(prefix . input)
+      let line = execute(prefix . ' ' . input)
       call setline(line('$'), getline('$') . input)
       call s:on_stdout(v:null, split(line, '\r\?\n'), 'stdout')
     catch /^Vim:Interrupt$/
@@ -82,7 +82,7 @@ function! replica#repl_internal(...) abort " {{{
       return
     catch
       call setline(line('$'), g:replica#prompt . input)
-      call s:on_stderr(v:null, split(v:exception, '\r\?\n'), 'stdout')
+      call s:on_stdout(v:null, split(v:exception, '\r\?\n'), 'stdout')
     endtry
     call setline(line('$') + 1, g:replica#prompt)
     redraw

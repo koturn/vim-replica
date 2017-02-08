@@ -20,38 +20,43 @@ let s:internal_repls = add(map(filter(['lua', 'mzscheme', 'perl', 'python', 'pyt
       \ 'name': 'vim',
       \ 'prefix': ''
       \})
+let s:ANSI = vital#replica#import('Vim.Buffer.ANSI')
+let s:Job = vital#replica#import('System.Job')
 " }}}
 
-function! replica#repl(name) abort " {{{
-  if !executable(a:name)
-    echoerr "[replica] Unable to execute" a:name
+function! replica#repl(args) abort " {{{
+  let args = split(a:args)
+  let name = get(args, 0, '')
+  if !executable(name)
+    echoerr '[replica] Unable to execute' name
     return
   endif
   execute 'botright' g:replica#max_nlines 'new [replica]'
   setlocal nobuflisted bufhidden=unload buftype=nofile
   call setline(1, '*[vim-replica]*')
-  let job_id = job_start(a:name, {
-        \ 'callback': function('s:on_out'),
-        \ 'exit_cb': function('s:on_exit'),
-        \ 'out_mode': 'raw',
-        \ 'err_mode': 'raw'
+  call s:ANSI.define_syntax()
+  let job = s:Job.start(args, {
+        \ 'on_stdout': function('s:on_stdout'),
+        \ 'on_stderr': function('s:on_stdout'),
+        \ 'on_exit': function('s:on_exit'),
         \})
   sleep 100m
-  if job_status(job_id) !=# 'run'
-    echoerr '[replica] Unable to launch:' a:name
+  if job.status() !=# 'run'
+    echoerr '[replica] Unable to launch:' name
     return
   endif
   try
-    while job_status(job_id) ==# 'run'
+    while job.status() ==# 'run'
       let line = input(g:replica#prompt)
       call setline(line('$'), getline('$') . line)
-      call ch_sendraw(job_id, line . "\n")
+      call job.send(line . "\n")
       sleep 50m
     endwhile
-    bwipeout!
+  catch /^Vim:Interrupt$/
+    call job.stop()
   catch
-    call job_stop(job_id)
-    bwipeout!
+    echoerr v:exception
+    call job.stop()
   endtry
 endfunction " }}}
 
@@ -59,7 +64,7 @@ function! replica#repl_internal(...) abort " {{{
   let name = a:0 > 0 ? a:1 : 'vim'
   let items = filter(copy(s:internal_repls), '!stridx(tolower(v:val.name), name)')
   if empty(items)
-    echoerr '[replica]' a:name 'is not available'
+    echoerr '[replica]' name 'is not available'
     return
   endif
   execute 'botright' g:replica#max_nlines 'new [replica]'
@@ -69,19 +74,15 @@ function! replica#repl_internal(...) abort " {{{
   let [prefix, input] = [items[0].prefix, input(g:replica#prompt)]
   while input !=# 'exit'
     try
-      redir => line
-      silent execute prefix input
-      redir END
+      let line = execute(prefix . ' ' . input)
       call setline(line('$'), getline('$') . input)
-      call s:on_out(v:null, line)
+      call s:on_stdout(v:null, split(line, '\r\?\n'), 'stdout')
     catch /^Vim:Interrupt$/
-      redir END
       call s:on_exit()
       return
     catch
-      redir END
       call setline(line('$'), g:replica#prompt . input)
-      call s:on_out(v:null, v:exception)
+      call s:on_stdout(v:null, split(v:exception, '\r\?\n'), 'stdout')
     endtry
     call setline(line('$') + 1, g:replica#prompt)
     redraw
@@ -95,9 +96,9 @@ function! replica#complete_repl_internal(arglead, cmdline, cursorpos) abort " {{
   return filter(map(copy(s:internal_repls), 'v:val.name'), '!stridx(tolower(v:val), arglead)')
 endfunction " }}}
 
-
-function! s:on_out(job_id, out) abort " {{{
-  call setline(line('$') + 1, split(a:out, "\n"))
+function! s:on_stdout(job, msg, event) abort " {{{
+  echomsg string(a:msg)
+  call setline(line('$') + 1, a:msg)
   if line('$') > g:replica#max_nlines
     execute '1,' (line('$') - g:replica#max_nlines) 'delete'
   endif
@@ -106,7 +107,7 @@ function! s:on_out(job_id, out) abort " {{{
 endfunction " }}}
 
 function! s:on_exit(...) abort " {{{
-  " bwipeout!
+  bwipeout!
 endfunction " }}}
 
 

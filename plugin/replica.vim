@@ -13,7 +13,7 @@ let s:save_cpo = &cpo
 set cpo&vim
 
 
-command! -bar -nargs=1 Replica  call replica#repl(<f-args>)
+command! -bar -nargs=* Replica  call replica#repl(<q-args>)
 command! -bar -nargs=? -complete=customlist,replica#complete_repl_internal ReplicaInternal  call replica#repl_internal(<f-args>)
 
 

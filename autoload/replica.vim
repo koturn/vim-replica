@@ -5,111 +5,138 @@
 " Easy REPL in Vim.
 " }}}
 " ============================================================================
-let s:save_cpo = &cpo
-set cpo&vim
-
-" {{{ global variables
-let g:replica#prompt = get(g:, 'replica#prompt', '> ')
-let g:replica#max_nlines = get(g:, 'replica#max_nlines', 1000)
-" }}}
-" {{{ Script local variables
-let s:internal_repls = add(map(filter(['lua', 'mzscheme', 'perl', 'python', 'python3', 'ruby', 'tcl'], 'has(v:val)'), '{
-      \ "name": v:val,
-      \ "prefix": v:val
-      \}'), {
-      \ 'name': 'vim',
-      \ 'prefix': ''
-      \})
 let s:ANSI = vital#replica#import('Vim.Buffer.ANSI')
-let s:Job = vital#replica#import('System.Job')
-" }}}
+let s:Guard = vital#replica#import('Vim.Guard')
+let s:Window = vital#replica#import('Vim.Window')
 
-function! replica#repl(args) abort " {{{
-  let args = split(a:args)
-  let name = get(args, 0, '')
-  if !executable(name)
-    echoerr '[replica] Unable to execute' name
+
+function! replica#open(repl) abort
+  let bufname = printf('replica://%s', a:repl.name)
+  execute g:replica#opener bufname
+  let b:replica = copy(s:replica)
+  let b:replica.repl = a:repl
+  let b:replica.bufnr = bufnr('%')
+  call extend(b:replica, a:repl.complement)
+  setlocal bufhidden=wipe buftype=nowrite
+  setlocal noswapfile
+  setlocal nomodifiable
+  setlocal filetype=replica
+  nnoremap <buffer><silent> <Plug>(replica-start)
+        \ :<C-u>call replica#start()<CR>
+  nnoremap <buffer><silent> <Plug>(replica-start-cword)
+        \ :<C-u>call replica#start(expand('<cword>'))<CR>
+  nnoremap <buffer><silent> <Plug>(replica-start-paste)
+        \ :<C-u>call replica#start(getreg())<CR>
+  augroup replica_window
+    autocmd! * <buffer>
+    autocmd BufReadCmd <buffer> call s:on_BufReadCmd()
+    autocmd BufWipeout <buffer> call s:on_BufWipeout()
+  augroup END
+  doautocmd BufReadCmd
+  call replica#start()
+endfunction
+
+function! replica#start(...) abort
+  if !exists('b:replica')
+    echoerr '[replica] No replica instance is found on the buffer'
     return
   endif
-  execute 'botright' g:replica#max_nlines 'new [replica]'
-  setlocal nobuflisted bufhidden=unload buftype=nofile
-  call setline(1, '*[vim-replica]*')
+  let sleeptime = g:replica#updatetime . 'm'
+  let input = s:input(g:replica#prompt, get(a:000, 0, ''))
+  while input isnot# v:null
+    let content = split(input, '\r\?\n', 1) + ['']
+    call b:replica.recieved(content)
+    call b:replica.request(content)
+    execute 'sleep' sleeptime
+    redraw
+    let input = s:input(g:replica#prompt)
+  endwhile
+  redraw | echo
+endfunction
+
+
+" Private --------------------------------------------------------------------
+function! s:input(prompt, ...) abort
+  cnoremap <buffer><silent> <Esc> <C-u>===ESCAPE===<CR>
+  try
+    call inputsave()
+    redraw
+    let result = call('input', [a:prompt] + a:000)
+    redraw
+    if result ==# '===ESCAPE==='
+      return v:null
+    endif
+    return result
+  finally
+    call inputrestore()
+    cunmap <buffer> <Esc>
+  endtry
+endfunction
+
+function! s:extend_content(content) abort
+  let guard = s:Guard.store(['&l:modifiable'])
+  try
+    setlocal modifiable
+    let leading = getline('$')
+    let content = [leading . get(a:content, 0, '')] + a:content[1:]
+    silent lockmarks keepjumps $delete _
+    silent lockmarks keepjumps call append(line('$'), content)
+  finally
+    call guard.restore()
+  endtry
+endfunction
+
+function! s:define_syntax() abort
   call s:ANSI.define_syntax()
-  let job = s:Job.start(args, {
-        \ 'on_stdout': function('s:on_stdout'),
-        \ 'on_stderr': function('s:on_stdout'),
-        \ 'on_exit': function('s:on_exit'),
-        \})
-  sleep 100m
-  if job.status() !=# 'run'
-    echoerr '[replica] Unable to launch:' name
+  " Wikipedia: ANSI escape code > Non-CSI codes
+  syntax match ReplicaSuppressOSC conceal /\e\].\{-}/
+endfunction
+
+function! s:on_BufReadCmd() abort
+  let replica = getbufvar(expand('<afile>'), 'replica', v:null)
+  if replica isnot# v:null
+    call s:define_syntax()
+    call replica.init()
+  endif
+endfunction
+
+function! s:on_BufWipeout() abort
+  let replica = getbufvar(expand('<afile>'), 'replica', v:null)
+  if replica isnot# v:null
+    call replica.exit()
+  endif
+endfunction
+
+
+" A replica instance ---------------------------------------------------------
+let s:replica = {}
+
+function! s:replica.init() abort
+endfunction
+
+function! s:replica.exit() abort
+endfunction
+
+function! s:replica.recieved(content) abort
+  let guard = s:Window.focus_buffer(self.bufnr)
+  if guard is# v:null
     return
   endif
   try
-    while job.status() ==# 'run'
-      let line = input(g:replica#prompt)
-      call setline(line('$'), getline('$') . line)
-      call job.send(line . "\n")
-      sleep 50m
-    endwhile
-  catch /^Vim:Interrupt$/
-    call job.stop()
-  catch
-    echoerr v:exception
-    call job.stop()
-  endtry
-endfunction " }}}
-
-function! replica#repl_internal(...) abort " {{{
-  let name = a:0 > 0 ? a:1 : 'vim'
-  let items = filter(copy(s:internal_repls), '!stridx(tolower(v:val.name), name)')
-  if empty(items)
-    echoerr '[replica]' name 'is not available'
-    return
-  endif
-  execute 'botright' g:replica#max_nlines 'new [replica]'
-  setlocal nobuflisted bufhidden=unload buftype=nofile
-  call setline(line('$'), g:replica#prompt)
-  redraw
-  let [prefix, input] = [items[0].prefix, input(g:replica#prompt)]
-  while input !=# 'exit'
-    try
-      let line = execute(prefix . ' ' . input)
-      call setline(line('$'), getline('$') . input)
-      call s:on_stdout(v:null, split(line, '\r\?\n'), 'stdout')
-    catch /^Vim:Interrupt$/
-      call s:on_exit()
-      return
-    catch
-      call setline(line('$'), g:replica#prompt . input)
-      call s:on_stdout(v:null, split(v:exception, '\r\?\n'), 'stdout')
-    endtry
-    call setline(line('$') + 1, g:replica#prompt)
+    call s:extend_content(a:content)
+    normal! G
     redraw
-    let input = input(g:replica#prompt)
-  endwhile
-  call s:on_exit()
-endfunction " }}}
+  finally
+    call guard.restore()
+  endtry
+endfunction
 
-function! replica#complete_repl_internal(arglead, cmdline, cursorpos) abort " {{{
-  let arglead = tolower(a:arglead)
-  return filter(map(copy(s:internal_repls), 'v:val.name'), '!stridx(tolower(v:val), arglead)')
-endfunction " }}}
-
-function! s:on_stdout(job, msg, event) abort " {{{
-  echomsg string(a:msg)
-  call setline(line('$') + 1, a:msg)
-  if line('$') > g:replica#max_nlines
-    execute '1,' (line('$') - g:replica#max_nlines) 'delete'
-  endif
-  normal! G
-  redraw
-endfunction " }}}
-
-function! s:on_exit(...) abort " {{{
-  bwipeout!
-endfunction " }}}
+function! s:replica.request(content) abort
+  throw '[replica] replica.request() is required to be overridden'
+endfunction
 
 
-let &cpo = s:save_cpo
-unlet s:save_cpo
+" Default config -------------------------------------------------------------
+let g:replica#opener = get(g:, 'replica#opener', 'vsplit')
+let g:replica#prompt = get(g:, 'replica#prompt', '> ')
+let g:replica#updatetime = get(g:, 'replica#updatetime', 50)

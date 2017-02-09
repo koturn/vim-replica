@@ -9,13 +9,9 @@ if exists('g:loaded_replica')
   finish
 endif
 let g:loaded_replica = 1
-let s:save_cpo = &cpo
-set cpo&vim
 
 
-command! -bar -nargs=* Replica  call replica#repl(<q-args>)
-command! -bar -nargs=? -complete=customlist,replica#complete_repl_internal ReplicaInternal  call replica#repl_internal(<f-args>)
-
-
-let &cpo = s:save_cpo
-unlet s:save_cpo
+command! -bar -nargs=* Replica call replica#external#repl(<q-args>)
+command! -bar -nargs=?
+      \ -complete=customlist,replica#internal#comp
+      \ ReplicaInternal call replica#internal#repl(<f-args>)

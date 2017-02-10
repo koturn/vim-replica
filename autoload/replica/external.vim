@@ -9,7 +9,7 @@ function! replica#external#repl(args) abort
     return
   endif
   let repl = {
-        \ 'type': 'ext',
+        \ 'type': 'external',
         \ 'name': name,
         \ 'args': args,
         \ 'complement': copy(s:complement),
@@ -22,14 +22,13 @@ endfunction
 let s:complement = {}
 
 function! s:complement.init() abort
-  if has_key(self, 'job')
-    call self.job.stop()
-  endif
   let self.job = s:Job.start(self.repl.args, {
         \ 'replica': self,
         \ 'on_stdout': function('s:on_stdout'),
-        \ 'on_stderr': function('s:on_stderr'),
+        \ 'on_stderr': function('s:on_stdout'),
+        \ 'on_exit': function('s:on_exit'),
         \})
+  let self.is_terminated = self.job.status() !=# 'run'
   " Change a buffer name based on the job id
   execute printf(
         \ 'keepalt keepjumps file replica://%s:%d',
@@ -58,11 +57,6 @@ function! s:on_stdout(job, msg, event) abort dict
   call self.replica.recieved(a:msg)
 endfunction
 
-function! s:on_stderr(job, msg, event) abort dict
-  redraw
-  echohl ErrorMsg
-  for line in a:msg
-    echomsg '[replica]' line
-  endfor
-  echohl None
+function! s:on_exit(job, msg, event) abort dict
+  let self.replica.is_terminated = 1
 endfunction

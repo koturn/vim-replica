@@ -5,7 +5,7 @@ function! replica#internal#repl(args) abort
     return
   endif
   let repl = {
-        \ 'type': 'int',
+        \ 'type': 'internal',
         \ 'name': repl.name,
         \ 'command': repl.command,
         \ 'format': repl.format,

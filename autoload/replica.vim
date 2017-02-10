@@ -11,11 +11,12 @@ let s:Window = vital#replica#import('Vim.Window')
 
 
 function! replica#open(repl) abort
-  let bufname = printf('replica://%s', a:repl.name)
+  let bufname = printf('replica://%s:%s', a:repl.name, a:repl.type)
   execute g:replica#opener bufname
   let b:replica = copy(s:replica)
   let b:replica.repl = a:repl
   let b:replica.bufnr = bufnr('%')
+  let b:replica.is_terminated = 0
   call extend(b:replica, a:repl.complement)
   setlocal bufhidden=wipe buftype=nowrite
   setlocal noswapfile
@@ -41,6 +42,12 @@ function! replica#start(...) abort
     echoerr '[replica] No replica instance is found on the buffer'
     return
   endif
+  if b:replica.is_terminated
+    echohl WarningMsg
+    echo '[replica] The replica has terminated. Use ":edit" to restart.'
+    echohl None
+    return
+  endif
   let sleeptime = g:replica#updatetime . 'm'
   let input = s:input(g:replica#prompt, get(a:000, 0, ''))
   while input isnot# v:null
@@ -48,10 +55,17 @@ function! replica#start(...) abort
     call b:replica.recieved(content)
     call b:replica.request(content)
     execute 'sleep' sleeptime
+    if b:replica.is_terminated
+      break
+    endif
     redraw
     let input = s:input(g:replica#prompt)
   endwhile
   redraw | echo
+endfunction
+
+function! replica#terminate() abort
+  throw 'replica: Terminate:'
 endfunction
 
 
@@ -96,6 +110,7 @@ function! s:on_BufReadCmd() abort
   let replica = getbufvar(expand('<afile>'), 'replica', v:null)
   if replica isnot# v:null
     call s:define_syntax()
+    call replica.exit()
     call replica.init()
   endif
 endfunction
